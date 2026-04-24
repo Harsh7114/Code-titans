@@ -50,6 +50,55 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Path B — Local YOLOv8 Dataset (use while the Roboflow model is training)
+
+Since custom model training takes ~1 day, you can browse the labelled dataset
+immediately by downloading it in **YOLOv8** format and pointing the app at it.
+
+1. **Go to your Roboflow Versions page** → click **"Download Dataset"**
+2. **Choose format: YOLOv8** → copy the download link or unzip the ZIP locally
+3. Unzip to any folder, e.g. `~/datasets/xview2-xbd-yolov8/`
+4. Set in your `.env`:
+   ```env
+   ROBOFLOW_DATASET_ROOT=/full/path/to/xview2-xbd-yolov8
+   ROBOFLOW_DATASET_SPLIT=train      # or valid / test
+   ROBOFLOW_MAX_RECORDS=200
+   ```
+5. **Run the app** → in the sidebar select **"Local Roboflow xBD (YOLOv8)"**
+   → pick any record from the dropdown → the damage overlay, class breakdown
+   chart, logistics estimate, and SITREP all populate from the YOLOv8 labels.
+
+The four xBD damage classes (`no-damage`, `minor-damage`, `major-damage`,
+`destroyed`) are read directly from `data.yaml` inside the ZIP and mapped
+automatically to the three dashboard tiers (Intact / Damaged / Destroyed).
+
+
+
+This is the fastest path to live building-damage inference using the
+[xView2-xBD model on Roboflow](https://universe.roboflow.com/flow-wnra9/xview2-xbd).
+
+1. **Get a Roboflow API key** at <https://app.roboflow.com/settings/api>.
+
+2. **Copy `.env.example` to `.env`** and fill in your key:
+   ```env
+   ROBOFLOW_API_KEY=<your-key>
+   ROBOFLOW_MODEL_ID=xview2-xbd
+   ROBOFLOW_MODEL_VERSION=1
+   ```
+
+3. **Run the app** and select **"Upload Image"** in the sidebar.
+
+4. **Upload any post-disaster satellite image** (PNG/JPG, ideally 1024 × 1024 px).
+   The xView2-xBD model detects buildings and classifies each one as:
+   - 🟢 `no-damage`
+   - 🟡 `minor-damage`
+   - 🟠 `major-damage`
+   - 🔴 `destroyed`
+
+   The pipeline automatically normalises these four classes into the three-tier
+   dashboard categories (Intact / Damaged / Destroyed) and populates the
+   Damage Mapping, Logistics, SITREP, and Dispatch views.
+
 ## Current Status
 
 The repository contains:

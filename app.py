@@ -8,7 +8,13 @@ import streamlit as st
 from PIL import Image
 
 from src.config import AppConfig
-from src.data.loaders import list_xbd_records, load_csv_bytes, load_xbd_record
+from src.data.loaders import (
+    list_xbd_records,
+    load_csv_bytes,
+    load_xbd_record,
+    list_roboflow_yolo_records,
+    load_roboflow_yolo_record,
+)
 from src.modules.damage_mapping import (
     build_demo_uploaded_detections,
     normalize_roboflow_predictions,
@@ -55,12 +61,15 @@ def resolve_damage_context(config: AppConfig) -> tuple[list[dict], dict]:
     st.sidebar.markdown("### Damage Feed")
     selected_source = st.sidebar.radio(
         "Damage Data Source",
-        options=["Mock", "Local xBD tier3", "Upload Image"],
-        index=1 if config.xbd_dataset_root else 0,
+        options=["Mock", "Local xBD tier3", "Local Roboflow xBD (YOLOv8)", "Upload Image"],
+        index=2 if config.roboflow_dataset_root else (1 if config.xbd_dataset_root else 0),
     )
 
     if selected_source == "Local xBD tier3":
         return _resolve_xbd_context(config)
+
+    if selected_source == "Local Roboflow xBD (YOLOv8)":
+        return _resolve_roboflow_yolo_context(config)
 
     if selected_source == "Upload Image":
         return _resolve_uploaded_context(config)
@@ -107,7 +116,58 @@ def _resolve_xbd_context(config: AppConfig) -> tuple[list[dict], dict]:
     return context["detections"], context
 
 
+def _resolve_roboflow_yolo_context(config: AppConfig) -> tuple[list[dict], dict]:
+    if not config.roboflow_dataset_root:
+        st.sidebar.warning(
+            "Set `ROBOFLOW_DATASET_ROOT` in your `.env` to the folder where you "
+            "unzipped the Roboflow YOLOv8 download.\n\n"
+            "**Download steps:** Roboflow → Versions → Download Dataset → **YOLOv8** format."
+        )
+        return [], _empty_damage_context(
+            "Local Roboflow xBD (YOLOv8)", "No dataset root configured."
+        )
+
+    records = list_roboflow_yolo_records(
+        dataset_root=config.roboflow_dataset_root,
+        split=config.roboflow_dataset_split,
+        limit=config.roboflow_max_records,
+    )
+    if not records:
+        st.sidebar.warning(
+            f"No image-label pairs found under "
+            f"`{config.roboflow_dataset_root}/{config.roboflow_dataset_split}/`.\n\n"
+            "Check that ROBOFLOW_DATASET_SPLIT matches a folder in your unzipped dataset "
+            "(e.g. `train`, `valid`, or `test`)."
+        )
+        return [], _empty_damage_context(
+            "Local Roboflow xBD (YOLOv8)", "No usable image-label pairs found."
+        )
+
+    st.sidebar.success(
+        f"📂 {len(records)} images found in `{config.roboflow_dataset_split}/` split."
+    )
+    selected_record_id = st.sidebar.selectbox(
+        "xBD Record (YOLOv8)",
+        options=[record["id"] for record in records],
+    )
+    selected_record = next(record for record in records if record["id"] == selected_record_id)
+    context = load_roboflow_yolo_record(
+        image_path=selected_record["image_path"],
+        label_path=selected_record["label_path"],
+    )
+    context["source"] = "Local Roboflow xBD (YOLOv8)"
+    context["status"] = (
+        f"Loaded {len(context['detections'])} YOLOv8 annotations "
+        f"from {selected_record['id']}."
+    )
+    context["image_bytes"] = Path(selected_record["image_path"]).read_bytes()
+    context["image_name"] = Path(selected_record["image_path"]).name
+    return context["detections"], context
+
+
 def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
+    _render_roboflow_sidebar_guidance(config)
+
     uploaded_file = st.sidebar.file_uploader(
         "Upload Satellite or Aerial Image",
         type=["png", "jpg", "jpeg"],
@@ -130,6 +190,9 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
         "source": "uploaded-image",
     }
 
+    is_xbd_model = (config.roboflow_model_id or "").lower() == "xview2-xbd"
+    model_label = "xView2-xBD" if is_xbd_model else "Roboflow"
+
     if config.roboflow_configured:
         try:
             payload = run_roboflow_inference(
@@ -142,11 +205,11 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
             )
             detections = normalize_roboflow_predictions(payload)
             metadata.update(payload.get("image", {}))
-            status = "Roboflow inference completed successfully."
-            source = "Upload Image -> Roboflow"
+            status = f"{model_label} inference completed successfully. {len(detections)} building(s) detected."
+            source = f"Upload Image -> {model_label}"
         except RoboflowInferenceError as error:
             detections = build_demo_uploaded_detections(image_width, image_height)
-            status = f"Roboflow inference failed. Demo fallback used. {error}"
+            status = f"{model_label} inference failed. Demo fallback used. {error}"
             source = "Upload Image -> Demo Fallback"
     else:
         detections = build_demo_uploaded_detections(image_width, image_height)
@@ -166,6 +229,29 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
     cache = st.session_state.setdefault("uploaded_damage_cache", {})
     cache[cache_key] = context
     return detections, context
+
+
+def _render_roboflow_sidebar_guidance(config: AppConfig) -> None:
+    is_xbd_model = (config.roboflow_model_id or "").lower() == "xview2-xbd"
+    if config.roboflow_configured and is_xbd_model:
+        st.sidebar.success(
+            f"**xView2-xBD model ready** (v{config.roboflow_model_version})\n\n"
+            "Upload a post-disaster satellite image. The model detects buildings "
+            "and classifies each as one of four damage grades:\n"
+            "🟢 no-damage · 🟡 minor-damage · 🟠 major-damage · 🔴 destroyed"
+        )
+    elif config.roboflow_configured:
+        st.sidebar.info(
+            f"**Roboflow model:** `{config.roboflow_model_id}` v{config.roboflow_model_version}\n\n"
+            "Upload an image to run inference."
+        )
+    else:
+        st.sidebar.warning(
+            "**Roboflow not configured.** Set `ROBOFLOW_API_KEY`, "
+            "`ROBOFLOW_MODEL_ID=xview2-xbd`, and `ROBOFLOW_MODEL_VERSION=1` "
+            "in your `.env` file to enable live inference. "
+            "Demo fallback detections will be used until then."
+        )
 
 
 def _empty_damage_context(source: str, status: str) -> dict:
