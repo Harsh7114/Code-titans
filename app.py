@@ -15,7 +15,8 @@ from src.modules.damage_mapping import (
     summarize_damage,
 )
 from src.modules.dispatch import build_dispatch_message, send_dispatch_sms, DispatchError
-from src.modules.gemini_sos import GeminiExtractionError, extract_sos_with_gemini
+from src.modules.gemini_sos import GeminiExtractionError
+from src.modules.nltk_sos import extract_sos_with_nltk
 from src.modules.geocoding import geocode_locations
 from src.modules.logistics import estimate_logistics
 from src.modules.map_fusion import compute_hotspots
@@ -228,31 +229,24 @@ def _extract_sos_context(dataframe, config: AppConfig, source_name: str) -> tupl
 
     extraction_mode = st.sidebar.selectbox(
         "SOS Extraction Mode",
-        options=["Gemini", "Heuristic Fallback"],
-        index=0 if config.gemini_configured else 1,
+        options=["NLTK NLP Tree", "Heuristic Fallback"],
+        index=0,
     )
 
-    if extraction_mode == "Gemini" and config.gemini_configured:
+    if extraction_mode == "NLTK NLP Tree":
         try:
-            extracted_rows = extract_sos_with_gemini(
-                records=records,
-                api_key=config.gemini_api_key or "",
-                model=config.gemini_model,
-            )
+            # Using NLTK for Named Entity Recognition and similarity matching
+            extracted_rows = extract_sos_with_nltk(records)
             events = extract_sos_events_with_fallback(records, extracted_rows)
-            status = "Gemini extraction completed successfully."
-            mode = "gemini"
-        except GeminiExtractionError as error:
+            status = "NLTK NLP Tree extraction completed successfully."
+            mode = "nltk-nlp"
+        except Exception as error:
             events = extract_sos_events_with_fallback(records)
-            status = f"Gemini extraction failed. Heuristic fallback used. {error}"
+            status = f"NLTK extraction failed. Heuristic fallback used. {error}"
             mode = "heuristic-fallback"
     else:
         events = extract_sos_events_with_fallback(records)
-        status = (
-            "Gemini API key is missing. Heuristic fallback was used."
-            if extraction_mode == "Gemini"
-            else "Heuristic fallback extraction was used."
-        )
+        status = "Heuristic fallback extraction was used."
         mode = "heuristic-fallback"
 
     return events, {
