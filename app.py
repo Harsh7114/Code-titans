@@ -44,6 +44,7 @@ from src.ui.sections import (
     render_side_note,
     render_sos_priority_chart,
     render_status_chips,
+    render_logistics_chart,
 )
 
 
@@ -507,6 +508,14 @@ def main() -> None:
             render_metric_card("Emergency Cots", str(logistics_summary["emergency_cots"]), "🛏️", "linear-gradient(135deg, #f59e0b 0%, #b45309 100%)", "Immediate shelter capacity placeholder")
         with logistics_cards[3]:
             render_metric_card("Medical Kits", str(logistics_summary["medical_kits"]), "🩺", "linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)", "Baseline trauma and first-aid projection")
+            
+        st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
+        render_panel_header(
+            "Supply Distribution Projection",
+            "📊",
+            "Visual breakdown of the ground supply requirements estimated for immediate dispatch."
+        )
+        render_logistics_chart(logistics_summary)
 
     if selected_mode == "SITREP":
         render_panel_header(

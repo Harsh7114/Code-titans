@@ -544,25 +544,22 @@ def render_damage_breakdown_chart(class_breakdown: dict[str, int]) -> None:
     values = [class_breakdown[label] for label in ordered_labels]
     colors = [damage_label_color(label if "-" not in label else _normalize_chart_label(label)) for label in ordered_labels]
 
-    figure = go.Figure(
-        data=[
-            go.Bar(
-                x=values,
-                y=ordered_labels,
-                orientation="h",
-                marker={"color": colors, "line": {"width": 0}},
-                text=values,
-                textposition="outside",
-            )
-        ]
-    )
+    figure = go.Figure(data=[go.Pie(
+        labels=[l.title() for l in ordered_labels],
+        values=values,
+        hole=.5,
+        marker=dict(colors=colors, line=dict(color='#0e1117', width=2)),
+        textinfo='label+percent',
+        hoverinfo='label+value',
+        textfont_size=13
+    )])
+    
     figure.update_layout(
-        height=300,
-        margin={"l": 10, "r": 10, "t": 10, "b": 10},
+        height=320,
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        xaxis={"visible": False},
-        yaxis={"title": None},
+        showlegend=False,
     )
     st.plotly_chart(figure, use_container_width=True)
 
@@ -606,10 +603,40 @@ def _normalize_chart_label(raw_label: str) -> str:
     return raw_label
 
 
+def render_logistics_chart(logistics_summary: dict) -> None:
+    categories = ["Water (L)", "Emergency Cots", "Medical Kits"]
+    values = [
+        logistics_summary.get("water_liters", 0),
+        logistics_summary.get("emergency_cots", 0),
+        logistics_summary.get("medical_kits", 0),
+    ]
+    colors = ["#3b82f6", "#f59e0b", "#14b8a6"]
+
+    figure = go.Figure(data=[
+        go.Bar(
+            x=categories,
+            y=values,
+            marker_color=colors,
+            text=values,
+            textposition='auto',
+        )
+    ])
+    
+    figure.update_layout(
+        height=350,
+        margin={"l": 20, "r": 20, "t": 30, "b": 20},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+    )
+    st.plotly_chart(figure, use_container_width=True)
+
+
 def render_fused_map(damage_detections: list[dict], hotspots: list[dict]) -> None:
     damage_data = []
     for d in damage_detections:
-        if "latitude" in d and "longitude" in d:
+        if d.get("latitude") is not None and d.get("longitude") is not None:
             lbl = d.get("label", "")
             if lbl == "destroyed":
                 color = [239, 68, 68, 200]
@@ -660,11 +687,21 @@ def render_fused_map(damage_detections: list[dict], hotspots: list[dict]) -> Non
     )
     
     if damage_data or hotspots:
-        valid_lats = [d["latitude"] for d in damage_data] + [h["latitude"] for h in hotspots]
-        valid_lngs = [d["longitude"] for d in damage_data] + [h["longitude"] for h in hotspots]
-        if valid_lats:
-            view_state.latitude = sum(valid_lats) / len(valid_lats)
-            view_state.longitude = sum(valid_lngs) / len(valid_lngs)
+        valid_damage_lats = [d["latitude"] for d in damage_data if d.get("latitude") is not None]
+        valid_damage_lngs = [d["longitude"] for d in damage_data if d.get("longitude") is not None]
+        
+        valid_hotspot_lats = [h["latitude"] for h in hotspots if h.get("latitude") is not None]
+        valid_hotspot_lngs = [h["longitude"] for h in hotspots if h.get("longitude") is not None]
+        
+        # Prefer centering on the damage site. If no damage, center on the SOS hotspots.
+        if valid_damage_lats:
+            view_state.latitude = sum(valid_damage_lats) / len(valid_damage_lats)
+            view_state.longitude = sum(valid_damage_lngs) / len(valid_damage_lngs)
+            view_state.zoom = 14
+        elif valid_hotspot_lats:
+            view_state.latitude = sum(valid_hotspot_lats) / len(valid_hotspot_lats)
+            view_state.longitude = sum(valid_hotspot_lngs) / len(valid_hotspot_lngs)
+            view_state.zoom = 12
 
     r = pdk.Deck(
         layers=[damage_layer, sos_layer],
