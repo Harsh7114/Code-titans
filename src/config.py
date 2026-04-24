@@ -21,6 +21,9 @@ class AppConfig:
     roboflow_model_version: str | None
     roboflow_confidence: int
     roboflow_overlap: int
+    roboflow_dataset_root: str | None
+    roboflow_dataset_split: str
+    roboflow_max_records: int
     geocoding_provider: str
     geocoding_api_key: str | None
     xbd_dataset_root: str | None
@@ -43,6 +46,9 @@ class AppConfig:
             roboflow_model_version=os.getenv("ROBOFLOW_MODEL_VERSION"),
             roboflow_confidence=int(os.getenv("ROBOFLOW_CONFIDENCE", "40")),
             roboflow_overlap=int(os.getenv("ROBOFLOW_OVERLAP", "30")),
+            roboflow_dataset_root=os.getenv("ROBOFLOW_DATASET_ROOT"),
+            roboflow_dataset_split=os.getenv("ROBOFLOW_DATASET_SPLIT", "train"),
+            roboflow_max_records=int(os.getenv("ROBOFLOW_MAX_RECORDS", "200")),
             geocoding_provider=os.getenv("GEOCODING_PROVIDER", "mock"),
             geocoding_api_key=os.getenv("GEOCODING_API_KEY"),
             xbd_dataset_root=os.getenv("XBD_DATASET_ROOT"),

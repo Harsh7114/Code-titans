@@ -8,7 +8,13 @@ import streamlit as st
 from PIL import Image
 
 from src.config import AppConfig
-from src.data.loaders import list_xbd_records, load_csv_bytes, load_xbd_record
+from src.data.loaders import (
+    list_xbd_records,
+    load_csv_bytes,
+    load_xbd_record,
+    list_roboflow_yolo_records,
+    load_roboflow_yolo_record,
+)
 from src.modules.damage_mapping import (
     build_demo_uploaded_detections,
     normalize_roboflow_predictions,
@@ -55,12 +61,15 @@ def resolve_damage_context(config: AppConfig) -> tuple[list[dict], dict]:
     st.sidebar.markdown("### Damage Feed")
     selected_source = st.sidebar.radio(
         "Damage Data Source",
-        options=["Mock", "Local xBD tier3", "Upload Image"],
-        index=1 if config.xbd_dataset_root else 0,
+        options=["Mock", "Local xBD tier3", "Local Roboflow xBD (YOLOv8)", "Upload Image"],
+        index=2 if config.roboflow_dataset_root else (1 if config.xbd_dataset_root else 0),
     )
 
     if selected_source == "Local xBD tier3":
         return _resolve_xbd_context(config)
+
+    if selected_source == "Local Roboflow xBD (YOLOv8)":
+        return _resolve_roboflow_yolo_context(config)
 
     if selected_source == "Upload Image":
         return _resolve_uploaded_context(config)
@@ -102,6 +111,55 @@ def _resolve_xbd_context(config: AppConfig) -> tuple[list[dict], dict]:
     )
     context["source"] = "Local xBD tier3"
     context["status"] = "Loaded polygon annotations from xBD tier3."
+    context["image_bytes"] = Path(selected_record["image_path"]).read_bytes()
+    context["image_name"] = Path(selected_record["image_path"]).name
+    return context["detections"], context
+
+
+def _resolve_roboflow_yolo_context(config: AppConfig) -> tuple[list[dict], dict]:
+    if not config.roboflow_dataset_root:
+        st.sidebar.warning(
+            "Set `ROBOFLOW_DATASET_ROOT` in your `.env` to the folder where you "
+            "unzipped the Roboflow YOLOv8 download.\n\n"
+            "**Download steps:** Roboflow → Versions → Download Dataset → **YOLOv8** format."
+        )
+        return [], _empty_damage_context(
+            "Local Roboflow xBD (YOLOv8)", "No dataset root configured."
+        )
+
+    records = list_roboflow_yolo_records(
+        dataset_root=config.roboflow_dataset_root,
+        split=config.roboflow_dataset_split,
+        limit=config.roboflow_max_records,
+    )
+    if not records:
+        st.sidebar.warning(
+            f"No image-label pairs found under "
+            f"`{config.roboflow_dataset_root}/{config.roboflow_dataset_split}/`.\n\n"
+            "Check that ROBOFLOW_DATASET_SPLIT matches a folder in your unzipped dataset "
+            "(e.g. `train`, `valid`, or `test`)."
+        )
+        return [], _empty_damage_context(
+            "Local Roboflow xBD (YOLOv8)", "No usable image-label pairs found."
+        )
+
+    st.sidebar.success(
+        f"📂 {len(records)} images found in `{config.roboflow_dataset_split}/` split."
+    )
+    selected_record_id = st.sidebar.selectbox(
+        "xBD Record (YOLOv8)",
+        options=[record["id"] for record in records],
+    )
+    selected_record = next(record for record in records if record["id"] == selected_record_id)
+    context = load_roboflow_yolo_record(
+        image_path=selected_record["image_path"],
+        label_path=selected_record["label_path"],
+    )
+    context["source"] = "Local Roboflow xBD (YOLOv8)"
+    context["status"] = (
+        f"Loaded {len(context['detections'])} YOLOv8 annotations "
+        f"from {selected_record['id']}."
+    )
     context["image_bytes"] = Path(selected_record["image_path"]).read_bytes()
     context["image_name"] = Path(selected_record["image_path"]).name
     return context["detections"], context
