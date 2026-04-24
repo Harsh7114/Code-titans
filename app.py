@@ -108,6 +108,8 @@ def _resolve_xbd_context(config: AppConfig) -> tuple[list[dict], dict]:
 
 
 def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
+    _render_roboflow_sidebar_guidance(config)
+
     uploaded_file = st.sidebar.file_uploader(
         "Upload Satellite or Aerial Image",
         type=["png", "jpg", "jpeg"],
@@ -130,6 +132,9 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
         "source": "uploaded-image",
     }
 
+    is_xbd_model = (config.roboflow_model_id or "").lower() == "xview2-xbd"
+    model_label = "xView2-xBD" if is_xbd_model else "Roboflow"
+
     if config.roboflow_configured:
         try:
             payload = run_roboflow_inference(
@@ -142,11 +147,11 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
             )
             detections = normalize_roboflow_predictions(payload)
             metadata.update(payload.get("image", {}))
-            status = "Roboflow inference completed successfully."
-            source = "Upload Image -> Roboflow"
+            status = f"{model_label} inference completed successfully. {len(detections)} building(s) detected."
+            source = f"Upload Image -> {model_label}"
         except RoboflowInferenceError as error:
             detections = build_demo_uploaded_detections(image_width, image_height)
-            status = f"Roboflow inference failed. Demo fallback used. {error}"
+            status = f"{model_label} inference failed. Demo fallback used. {error}"
             source = "Upload Image -> Demo Fallback"
     else:
         detections = build_demo_uploaded_detections(image_width, image_height)
@@ -166,6 +171,29 @@ def _resolve_uploaded_context(config: AppConfig) -> tuple[list[dict], dict]:
     cache = st.session_state.setdefault("uploaded_damage_cache", {})
     cache[cache_key] = context
     return detections, context
+
+
+def _render_roboflow_sidebar_guidance(config: AppConfig) -> None:
+    is_xbd_model = (config.roboflow_model_id or "").lower() == "xview2-xbd"
+    if config.roboflow_configured and is_xbd_model:
+        st.sidebar.success(
+            f"**xView2-xBD model ready** (v{config.roboflow_model_version})\n\n"
+            "Upload a post-disaster satellite image. The model detects buildings "
+            "and classifies each as one of four damage grades:\n"
+            "🟢 no-damage · 🟡 minor-damage · 🟠 major-damage · 🔴 destroyed"
+        )
+    elif config.roboflow_configured:
+        st.sidebar.info(
+            f"**Roboflow model:** `{config.roboflow_model_id}` v{config.roboflow_model_version}\n\n"
+            "Upload an image to run inference."
+        )
+    else:
+        st.sidebar.warning(
+            "**Roboflow not configured.** Set `ROBOFLOW_API_KEY`, "
+            "`ROBOFLOW_MODEL_ID=xview2-xbd`, and `ROBOFLOW_MODEL_VERSION=1` "
+            "in your `.env` file to enable live inference. "
+            "Demo fallback detections will be used until then."
+        )
 
 
 def _empty_damage_context(source: str, status: str) -> dict:

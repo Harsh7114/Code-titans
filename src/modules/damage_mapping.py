@@ -2,20 +2,32 @@ from collections import Counter
 
 
 def normalize_damage_label(raw_label: str) -> str:
+    # Keys cover the xView2-xBD Roboflow model class names as well as the
+    # original xBD polygon annotation subtypes and common colour-code aliases.
     normalized_map = {
-        "destroyed": "destroyed",
-        "damaged": "damaged",
-        "major-damage": "damaged",
-        "major_damage": "damaged",
-        "minor-damage": "damaged",
-        "minor_damage": "damaged",
-        "severe-damage": "damaged",
+        # xView2-xBD Roboflow model classes (hyphen-separated)
         "no-damage": "intact",
+        "minor-damage": "damaged",
+        "major-damage": "damaged",
+        "destroyed": "destroyed",
+        # underscore variants (YOLO label files)
         "no_damage": "intact",
+        "minor_damage": "damaged",
+        "major_damage": "damaged",
+        # space-separated variants (some export pipelines)
+        "no damage": "intact",
+        "minor damage": "damaged",
+        "major damage": "damaged",
+        # original xBD annotation subtypes
+        "damaged": "damaged",
+        "severe-damage": "damaged",
+        "severe_damage": "damaged",
         "intact": "intact",
+        # colour-code shorthands
         "green": "intact",
         "yellow": "damaged",
         "red": "destroyed",
+        # unclassified / fallback
         "un-classified": "unknown",
         "unclassified": "unknown",
     }

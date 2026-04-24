@@ -50,6 +50,33 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## xView2-xBD Quick-Start (Roboflow API — no local dataset needed)
+
+This is the fastest path to live building-damage inference using the
+[xView2-xBD model on Roboflow](https://universe.roboflow.com/flow-wnra9/xview2-xbd).
+
+1. **Get a Roboflow API key** at <https://app.roboflow.com/settings/api>.
+
+2. **Copy `.env.example` to `.env`** and fill in your key:
+   ```env
+   ROBOFLOW_API_KEY=<your-key>
+   ROBOFLOW_MODEL_ID=xview2-xbd
+   ROBOFLOW_MODEL_VERSION=1
+   ```
+
+3. **Run the app** and select **"Upload Image"** in the sidebar.
+
+4. **Upload any post-disaster satellite image** (PNG/JPG, ideally 1024 × 1024 px).
+   The xView2-xBD model detects buildings and classifies each one as:
+   - 🟢 `no-damage`
+   - 🟡 `minor-damage`
+   - 🟠 `major-damage`
+   - 🔴 `destroyed`
+
+   The pipeline automatically normalises these four classes into the three-tier
+   dashboard categories (Intact / Damaged / Destroyed) and populates the
+   Damage Mapping, Logistics, SITREP, and Dispatch views.
+
 ## Current Status
 
 The repository contains:
