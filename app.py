@@ -7,6 +7,8 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
+from deep_translator import GoogleTranslator
+
 from src.config import AppConfig
 from src.data.loaders import list_xbd_records, load_csv_bytes, load_xbd_record
 from src.modules.damage_mapping import (
@@ -600,7 +602,34 @@ def main() -> None:
             )
             
             st.markdown("### SMS Preview")
-            render_side_note("Dispatch Draft", dispatch_preview)
+            
+            # Language Selection
+            lang_options = {
+                "English": "en",
+                "Hindi": "hi",
+                "Kannada": "kn",
+                "Marathi": "mr",
+                "Tamil": "ta",
+                "Bengali": "bn"
+            }
+            
+            selected_lang = st.selectbox(
+                "Select Dispatch Language",
+                options=list(lang_options.keys()),
+                index=0
+            )
+            
+            target_lang_code = lang_options[selected_lang]
+            
+            # Translate if not English
+            if target_lang_code != "en":
+                try:
+                    translated_preview = GoogleTranslator(source='auto', target=target_lang_code).translate(dispatch_preview)
+                    dispatch_preview = translated_preview
+                except Exception as e:
+                    st.warning(f"Translation failed: {e}. Falling back to English.")
+                    
+            render_side_note(f"Dispatch Draft ({selected_lang})", dispatch_preview)
             
             if config.twilio_configured:
                 if st.button("Send Dispatch SMS via Twilio"):
