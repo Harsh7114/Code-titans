@@ -5,3 +5,5 @@ pydeck>=0.9.1
 requests>=2.32.0
 python-dotenv>=1.0.1
 Pillow>=10.0.0
+nltk>=3.8.1
+deep-translator>=1.11.4
