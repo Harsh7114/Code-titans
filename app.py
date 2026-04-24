@@ -610,7 +610,12 @@ def main() -> None:
                 "Kannada": "kn",
                 "Marathi": "mr",
                 "Tamil": "ta",
-                "Bengali": "bn"
+                "Bengali": "bn",
+                "Telugu": "te",
+                "Punjabi": "pa",
+                "Gujarati": "gu",
+                "Odia": "or",
+                "Malayalam": "ml"
             }
             
             selected_lang = st.selectbox(
