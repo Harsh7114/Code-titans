@@ -27,6 +27,10 @@ class AppConfig:
     xbd_working_split: str
     xbd_image_stage: str
     xbd_max_records: int
+    twilio_account_sid: str | None
+    twilio_auth_token: str | None
+    twilio_from_number: str | None
+    twilio_to_number: str | None
     mock_damage_detections: list[dict]
     mock_sos_events: list[dict]
 
@@ -49,6 +53,10 @@ class AppConfig:
             xbd_working_split=os.getenv("XBD_WORKING_SPLIT", "tier3"),
             xbd_image_stage=os.getenv("XBD_IMAGE_STAGE", "post_disaster"),
             xbd_max_records=int(os.getenv("XBD_MAX_RECORDS", "100")),
+            twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID"),
+            twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN"),
+            twilio_from_number=os.getenv("TWILIO_FROM_NUMBER"),
+            twilio_to_number=os.getenv("TWILIO_TO_NUMBER"),
             mock_damage_detections=_default_damage_detections(),
             mock_sos_events=_default_sos_events(),
         )
@@ -62,6 +70,10 @@ class AppConfig:
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def twilio_configured(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_from_number and self.twilio_to_number)
 
 
 def _default_damage_detections() -> list[dict]:

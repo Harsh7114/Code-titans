@@ -14,13 +14,13 @@ from src.modules.damage_mapping import (
     normalize_roboflow_predictions,
     summarize_damage,
 )
-from src.modules.dispatch import build_dispatch_message
+from src.modules.dispatch import build_dispatch_message, send_dispatch_sms, DispatchError
 from src.modules.gemini_sos import GeminiExtractionError, extract_sos_with_gemini
 from src.modules.geocoding import geocode_locations
 from src.modules.logistics import estimate_logistics
 from src.modules.map_fusion import compute_hotspots
 from src.modules.roboflow_inference import RoboflowInferenceError, run_roboflow_inference
-from src.modules.sitrep import build_sitrep_payload, generate_sitrep_preview
+from src.modules.sitrep import build_sitrep_payload, generate_sitrep_preview, generate_sitrep_with_gemini, SITREPExtractionError
 from src.modules.sos_fusion import (
     build_sample_sos_dataframe,
     extract_sos_events_with_fallback,
@@ -281,12 +281,12 @@ def main() -> None:
     # Geocode SOS Events
     locations_to_geocode = [
         e.get("extracted_location") for e in sos_events 
-        if e.get("extracted_location") and "latitude" not in e
+        if e.get("extracted_location") and e.get("latitude") is None
     ]
     geocoded = geocode_locations(locations_to_geocode, config.geocoding_api_key, config.geocoding_provider)
     for event in sos_events:
         loc = event.get("extracted_location")
-        if loc in geocoded and "latitude" not in event:
+        if loc in geocoded and event.get("latitude") is None:
             event["latitude"], event["longitude"] = geocoded[loc]
 
     # Compute Hotspots
@@ -518,15 +518,115 @@ def main() -> None:
             "📝",
             "The SITREP view converts clean, structured metrics into a fast-release narrative for emergency officials and funding decisions.",
         )
+        
+        # Add Gemini integration
+        if config.gemini_configured:
+            if st.button("Generate Official SITREP with Gemini"):
+                with st.spinner("Generating formal report..."):
+                    try:
+                        formal_report = generate_sitrep_with_gemini(
+                            payload=sitrep_payload,
+                            api_key=config.gemini_api_key or "",
+                            model=config.gemini_model,
+                        )
+                        st.session_state["generated_sitrep"] = formal_report
+                        st.success("SITREP generated successfully!")
+                    except SITREPExtractionError as e:
+                        # Demo fallback for 429 quota errors
+                        st.warning(f"Gemini API limit reached ({e}). Using advanced heuristic fallback.")
+                        
+                        fallback_report = (
+                            f"URGENT SITUATION REPORT (SITREP)\n"
+                            f"================================\n\n"
+                            f"1. STRUCTURAL DAMAGE\n"
+                            f"- Destroyed Structures: {sitrep_payload['damage_summary']['destroyed']}\n"
+                            f"- Damaged Structures: {sitrep_payload['damage_summary']['damaged']}\n\n"
+                            f"2. INCIDENT URGENCY\n"
+                            f"- Total SOS Signals: {sitrep_payload['sos_summary']['total']}\n"
+                            f"- High Priority Signals: {sitrep_payload['sos_summary']['high_priority']}\n\n"
+                            f"3. LOGISTICS REQUIREMENTS\n"
+                            f"- Estimated Trapped: {sitrep_payload['logistics_summary']['estimated_people_trapped']}\n"
+                            f"- Water Needed: {sitrep_payload['logistics_summary']['water_liters']}L\n"
+                            f"- Emergency Cots: {sitrep_payload['logistics_summary']['emergency_cots']}\n"
+                            f"- Medical Kits: {sitrep_payload['logistics_summary']['medical_kits']}\n\n"
+                            f"ACTION REQUIRED: Immediate dispatch to primary high-priority coordinates."
+                        )
+                        st.session_state["generated_sitrep"] = fallback_report
+
+            if "generated_sitrep" in st.session_state:
+                st.markdown(f"```text\n{st.session_state['generated_sitrep']}\n```")
+                
+                if config.twilio_configured:
+                    if st.button("📱 Send Report via SMS"):
+                        with st.spinner("Sending report to command center..."):
+                            try:
+                                # Twilio splits >160 char messages automatically
+                                response = send_dispatch_sms(
+                                    message=st.session_state["generated_sitrep"],
+                                    account_sid=config.twilio_account_sid or "",
+                                    auth_token=config.twilio_auth_token or "",
+                                    from_number=config.twilio_from_number or "",
+                                    to_number=config.twilio_to_number or "",
+                                )
+                                st.success(f"Report dispatched! Message SID: {response.get('sid')}")
+                            except DispatchError as err:
+                                st.error(f"Failed to send SMS: {err}")
+                else:
+                    st.info("Configure Twilio in .env to send this report via SMS.")
+
+        else:
+            st.warning("Gemini API key is not configured. Using draft preview.")
+            
+        st.markdown("### Internal Draft Preview")
         render_side_note("Draft Output", generate_sitrep_preview(sitrep_payload))
 
     if selected_mode == "Dispatch":
         render_panel_header(
             "Field Dispatch Preview",
             "📡",
-            "This module will bridge the dashboard and low-connectivity responders through concise hotspot-specific SMS instructions.",
+            "This module bridges the dashboard and low-connectivity responders through concise hotspot-specific SMS instructions.",
         )
-        render_side_note("Dispatch Draft", dispatch_preview)
+        
+        # Select hotspot for dispatch
+        if hotspots:
+            selected_hotspot_name = st.selectbox(
+                "Select Target Hotspot",
+                options=[h.get("location_text", "Unknown Location") for h in hotspots]
+            )
+            # Find the selected hotspot
+            selected_hotspot = next((h for h in hotspots if h.get("location_text") == selected_hotspot_name), hotspots[0])
+            
+            coordinates_str = f"{selected_hotspot.get('latitude', 0.0):.4f}, {selected_hotspot.get('longitude', 0.0):.4f}"
+            
+            # Rebuild dispatch preview for the selected hotspot
+            dispatch_preview = build_dispatch_message(
+                hotspot_name=selected_hotspot_name,
+                coordinates=coordinates_str,
+                logistics_summary=logistics_summary,
+            )
+            
+            st.markdown("### SMS Preview")
+            render_side_note("Dispatch Draft", dispatch_preview)
+            
+            if config.twilio_configured:
+                if st.button("Send Dispatch SMS via Twilio"):
+                    with st.spinner("Sending SMS..."):
+                        try:
+                            response = send_dispatch_sms(
+                                message=dispatch_preview,
+                                account_sid=config.twilio_account_sid or "",
+                                auth_token=config.twilio_auth_token or "",
+                                from_number=config.twilio_from_number or "",
+                                to_number=config.twilio_to_number or "",
+                            )
+                            st.success(f"SMS dispatched successfully! Message SID: {response.get('sid')}")
+                        except DispatchError as e:
+                            st.error(f"Failed to send SMS: {e}")
+            else:
+                st.warning("Twilio API credentials are not fully configured in the .env file. Dispatch is disabled.")
+                
+        else:
+            st.info("No active hotspots available for dispatch. Process damage and SOS data first.")
 
 
 if __name__ == "__main__":
