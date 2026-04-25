@@ -185,7 +185,7 @@ def _empty_damage_context(source: str, status: str) -> dict:
     }
 
 
-def resolve_sos_context(config: AppConfig) -> tuple[list[dict], dict]:
+def resolve_sos_context(config: AppConfig, detections: list[dict]) -> tuple[list[dict], dict]:
     st.sidebar.markdown("### SOS Feed")
     selected_source = st.sidebar.radio(
         "SOS Data Source",
@@ -195,7 +195,7 @@ def resolve_sos_context(config: AppConfig) -> tuple[list[dict], dict]:
 
     if selected_source == "Sample SOS CSV":
         dataframe = build_sample_sos_dataframe()
-        return _extract_sos_context(dataframe, config, "Sample SOS CSV")
+        return _extract_sos_context(dataframe, config, "Sample SOS CSV", detections)
 
     if selected_source == "Upload SOS CSV":
         uploaded_file = st.sidebar.file_uploader("Upload SOS CSV", type=["csv"])
@@ -208,7 +208,7 @@ def resolve_sos_context(config: AppConfig) -> tuple[list[dict], dict]:
                 "dataframe_preview": [],
             }
         dataframe = load_csv_bytes(uploaded_file.getvalue())
-        return _extract_sos_context(dataframe, config, "Upload SOS CSV")
+        return _extract_sos_context(dataframe, config, "Upload SOS CSV", detections)
 
     return config.mock_sos_events, {
         "source": "Mock",
@@ -219,7 +219,7 @@ def resolve_sos_context(config: AppConfig) -> tuple[list[dict], dict]:
     }
 
 
-def _extract_sos_context(dataframe, config: AppConfig, source_name: str) -> tuple[list[dict], dict]:
+def _extract_sos_context(dataframe, config: AppConfig, source_name: str, detections: list[dict]) -> tuple[list[dict], dict]:
     records = normalize_sos_records(dataframe)
     if not records:
         return [], {
@@ -232,7 +232,7 @@ def _extract_sos_context(dataframe, config: AppConfig, source_name: str) -> tupl
 
     extraction_mode = st.sidebar.selectbox(
         "SOS Extraction Mode",
-        options=["NLTK NLP Tree", "Heuristic Fallback"],
+        options=["NLTK NLP Tree", "Spatial Pixel Area", "Heuristic Fallback"],
         index=0,
     )
 
@@ -247,6 +247,34 @@ def _extract_sos_context(dataframe, config: AppConfig, source_name: str) -> tupl
             events = extract_sos_events_with_fallback(records)
             status = f"NLTK extraction failed. Heuristic fallback used. {error}"
             mode = "heuristic-fallback"
+            
+    elif extraction_mode == "Spatial Pixel Area":
+        # Estimate people based on bounding box areas of detections
+        total_area = 0
+        destroyed_count = 0
+        for d in detections:
+            if d.get("label") == "destroyed" and d.get("bbox"):
+                x0, y0, x1, y1 = d["bbox"]
+                total_area += abs(x1 - x0) * abs(y1 - y0)
+                destroyed_count += 1
+                
+        avg_area = (total_area / destroyed_count) if destroyed_count > 0 else 2500
+        density_factor = config.avg_household_size / 2500.0
+        calculated_people = max(1, int(avg_area * density_factor))
+        
+        extracted_rows = []
+        for rec in records:
+            # Use basic heuristics for location, but override people_count with spatial math
+            extracted_rows.append({
+                "id": rec.get("id"),
+                "people_count": calculated_people,
+                "extraction_method": "spatial-area"
+            })
+            
+        events = extract_sos_events_with_fallback(records, extracted_rows)
+        status = f"Spatial Pixel Area applied. Calculated ~{calculated_people} people per hotspot based on structural footprint."
+        mode = "spatial-pixel-area"
+        
     else:
         events = extract_sos_events_with_fallback(records)
         status = "Heuristic fallback extraction was used."
@@ -273,7 +301,7 @@ def main() -> None:
     )
 
     detections, damage_context = resolve_damage_context(config)
-    sos_events, sos_context = resolve_sos_context(config)
+    sos_events, sos_context = resolve_sos_context(config, detections)
 
     # Geocode SOS Events
     locations_to_geocode = [
