@@ -553,6 +553,9 @@ def main() -> None:
         )
         
         # Add Gemini integration
+        payload_hash = hashlib.md5(str(sitrep_payload).encode()).hexdigest()
+        sitrep_key = f"generated_sitrep_{payload_hash}"
+
         if config.gemini_configured:
             if st.button("Generate Official SITREP with Gemini"):
                 with st.spinner("Generating formal report..."):
@@ -562,7 +565,7 @@ def main() -> None:
                             api_key=config.gemini_api_key or "",
                             model=config.gemini_model,
                         )
-                        st.session_state["generated_sitrep"] = formal_report
+                        st.session_state[sitrep_key] = formal_report
                         st.success("SITREP generated successfully!")
                     except SITREPExtractionError as e:
                         # Demo fallback for 429 quota errors
@@ -570,7 +573,8 @@ def main() -> None:
                         
                         fallback_report = (
                             f"URGENT SITUATION REPORT (SITREP)\n"
-                            f"================================\n\n"
+                            f"================================\n"
+                            f"INCIDENT RECORD ID: {damage_context.get('record_id', 'UNKNOWN')}\n\n"
                             f"1. STRUCTURAL DAMAGE\n"
                             f"- Destroyed Structures: {sitrep_payload['damage_summary']['destroyed']}\n"
                             f"- Damaged Structures: {sitrep_payload['damage_summary']['damaged']}\n\n"
@@ -584,10 +588,10 @@ def main() -> None:
                             f"- Medical Kits: {sitrep_payload['logistics_summary']['medical_kits']}\n\n"
                             f"ACTION REQUIRED: Immediate dispatch to primary high-priority coordinates."
                         )
-                        st.session_state["generated_sitrep"] = fallback_report
+                        st.session_state[sitrep_key] = fallback_report
 
-            if "generated_sitrep" in st.session_state:
-                st.markdown(f"```text\n{st.session_state['generated_sitrep']}\n```")
+            if sitrep_key in st.session_state:
+                st.markdown(f"```text\n{st.session_state[sitrep_key]}\n```")
                 
                 if config.twilio_configured:
                     if st.button("📱 Send Report via SMS"):
@@ -595,7 +599,7 @@ def main() -> None:
                             try:
                                 # Twilio splits >160 char messages automatically
                                 response = send_dispatch_sms(
-                                    message=st.session_state["generated_sitrep"],
+                                    message=st.session_state[sitrep_key],
                                     account_sid=config.twilio_account_sid or "",
                                     auth_token=config.twilio_auth_token or "",
                                     from_number=config.twilio_from_number or "",
