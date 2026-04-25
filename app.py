@@ -292,7 +292,7 @@ def main() -> None:
     damage_summary = summarize_damage(detections)
     sos_summary = summarize_sos(sos_events)
     logistics_summary = estimate_logistics(
-        destroyed_structures=damage_summary["destroyed"],
+        damage_detections=detections,
         avg_household_size=config.avg_household_size,
         water_per_person_liters=config.water_per_person_liters,
         medical_kits_per_10_people=config.medical_kits_per_10_people,
